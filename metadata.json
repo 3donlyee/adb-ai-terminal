@@ -1,0 +1,6 @@
+{
+  "name": "ADB AI Terminal",
+  "description": "أداة متقدمة للاقتران اللاسلكي بنمط Shizuku وترمينال Termux محترف مع ذكاء اصطناعي للتحكم بنظام أندرويد وColorOS 13",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

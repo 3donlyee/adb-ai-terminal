@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">ADB AI Terminal</string>
+    <string name="terminal_tab">الترمينال</string>
+    <string name="ai_copilot_tab">مساعد AI</string>
+    <string name="tools_tab">أدوات النظام</string>
+    <string name="wireless_pair_tab">الاقتران اللاسلكي</string>
+    <string name="history_tab">السجل والمفضلات</string>
+</resources>
