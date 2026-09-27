@@ -55,23 +55,20 @@ fun AdbStatusCard(
     onNavigateToPairing: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val isConnected = pairingState.status == AdbConnectionStatus.CONNECTED
-    val isPaired = pairingState.status == AdbConnectionStatus.PAIRED
-    val statusColor = when (pairingState.status) {
-        AdbConnectionStatus.CONNECTED -> TerminalGreen
-        AdbConnectionStatus.PAIRED -> TerminalCyan
-        AdbConnectionStatus.PAIRING, AdbConnectionStatus.CONNECTING -> TerminalYellow
-        AdbConnectionStatus.ERROR -> TerminalRed
-        AdbConnectionStatus.DISCONNECTED -> TextMuted
+    val isConnected = pairingState.isShizukuRunning && pairingState.isShizukuPermissionGranted
+    val isRunningWaitingAuth = pairingState.isShizukuRunning && !pairingState.isShizukuPermissionGranted
+    val statusColor = when {
+        isConnected -> TerminalGreen
+        isRunningWaitingAuth -> TerminalYellow
+        pairingState.isShizukuInstalled -> TerminalCyan
+        else -> TextMuted
     }
 
-    val statusText = when (pairingState.status) {
-        AdbConnectionStatus.CONNECTED -> "متصل بنجاح (ADB Active)"
-        AdbConnectionStatus.PAIRED -> "تم الاقتران (أدخل منفذ الاتصال)"
-        AdbConnectionStatus.PAIRING -> "جارٍ الاقتران..."
-        AdbConnectionStatus.CONNECTING -> "جارٍ الاتصال..."
-        AdbConnectionStatus.ERROR -> "خطأ في الاتصال"
-        AdbConnectionStatus.DISCONNECTED -> "غير متصل (اضغط للاقتران)"
+    val statusText = when {
+        isConnected -> "متصل بنجاح (Shizuku Shell)"
+        isRunningWaitingAuth -> "Shizuku جاهز (اضغط للمنح)"
+        pairingState.isShizukuInstalled -> "Shizuku مثبت (اضغط للتشغيل)"
+        else -> "غير متصل (اضغط للاقتران)"
     }
 
     Card(

@@ -1,7 +1,5 @@
 package com.example.ui.screens
 
-import android.content.Intent
-import android.provider.Settings
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
@@ -21,42 +19,36 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Cable
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DeveloperMode
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Launch
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.VpnKey
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.adb.AdbConnectionStatus
@@ -66,6 +58,7 @@ import com.example.ui.theme.TerminalCardSurface
 import com.example.ui.theme.TerminalCyan
 import com.example.ui.theme.TerminalDarkSurface
 import com.example.ui.theme.TerminalGreen
+import com.example.ui.theme.TerminalPurple
 import com.example.ui.theme.TerminalRed
 import com.example.ui.theme.TerminalYellow
 import com.example.ui.theme.TextMuted
@@ -83,12 +76,8 @@ fun WirelessPairingScreen(
     val pairingState by viewModel.pairingState.collectAsState()
     val deviceSpecs by viewModel.deviceSpecs.collectAsState()
 
-    var pairingPortInput by remember { mutableStateOf(pairingState.pairingPort) }
-    var pairingCodeInput by remember { mutableStateOf(pairingState.pairingCode) }
-    var connectPortInput by remember { mutableStateOf(pairingState.connectPort) }
-
-    val isConnectingOrPairing = pairingState.status == AdbConnectionStatus.PAIRING ||
-            pairingState.status == AdbConnectionStatus.CONNECTING
+    val isConnected = pairingState.isShizukuRunning && pairingState.isShizukuPermissionGranted
+    val isRunningWaitingAuth = pairingState.isShizukuRunning && !pairingState.isShizukuPermissionGranted
 
     Column(
         modifier = modifier
@@ -100,112 +89,197 @@ fun WirelessPairingScreen(
         // Header
         Row(
             modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFF0F262A))
-                    .border(1.dp, TerminalCyan, CircleShape),
-                contentAlignment = Alignment.Center
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF0E2238))
+                        .border(1.dp, TerminalCyan, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Security,
+                        contentDescription = null,
+                        tint = TerminalCyan,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Column {
+                    Text(
+                        text = "اقتران Shizuku الرسمي المباشر",
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimaryDark
+                    )
+                    Text(
+                        text = "Shizuku IPC Binder Engine • Android 13",
+                        fontSize = 11.sp,
+                        color = TerminalCyan
+                    )
+                }
+            }
+
+            // Refresh Status Button
+            Button(
+                onClick = { viewModel.refreshShizukuStatus() },
+                colors = ButtonDefaults.buttonColors(containerColor = TerminalDarkSurface),
+                border = androidx.compose.foundation.BorderStroke(1.dp, TerminalCardBorder),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.height(34.dp)
             ) {
                 Icon(
-                    imageVector = Icons.Default.Wifi,
-                    contentDescription = null,
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = "تحديث",
                     tint = TerminalCyan,
-                    modifier = Modifier.size(22.dp)
+                    modifier = Modifier.size(16.dp)
                 )
-            }
-            Spacer(modifier = Modifier.width(10.dp))
-            Column {
-                Text(
-                    text = "الاقتران اللاسلكي بنمط Shizuku",
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = TextPrimaryDark
-                )
-                Text(
-                    text = "Android 13 / ColorOS 13 • تصحيح الأخطاء اللاسلكي",
-                    fontSize = 11.sp,
-                    color = TerminalCyan
-                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("تحديث", color = TerminalCyan, fontSize = 11.sp)
             }
         }
 
         Spacer(modifier = Modifier.height(14.dp))
 
         // Connection Status Banner
+        val bannerBg = when {
+            isConnected -> Color(0xFF0D2818)
+            isRunningWaitingAuth -> Color(0xFF28240D)
+            else -> TerminalCardSurface
+        }
+        val bannerBorder = when {
+            isConnected -> TerminalGreen
+            isRunningWaitingAuth -> TerminalYellow
+            else -> TerminalCardBorder
+        }
+
         Card(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))
-                .border(1.dp, TerminalCardBorder, RoundedCornerShape(12.dp)),
-            colors = CardDefaults.cardColors(containerColor = TerminalCardSurface)
+                .border(1.dp, bannerBorder, RoundedCornerShape(12.dp)),
+            colors = CardDefaults.cardColors(containerColor = bannerBg)
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                val icon = when (pairingState.status) {
-                    AdbConnectionStatus.CONNECTED -> Icons.Default.CheckCircle
-                    AdbConnectionStatus.PAIRED -> Icons.Default.Link
-                    AdbConnectionStatus.PAIRING, AdbConnectionStatus.CONNECTING -> Icons.Default.DeveloperMode
-                    AdbConnectionStatus.ERROR -> Icons.Default.Error
-                    AdbConnectionStatus.DISCONNECTED -> Icons.Default.Wifi
-                }
-                val iconColor = when (pairingState.status) {
-                    AdbConnectionStatus.CONNECTED -> TerminalGreen
-                    AdbConnectionStatus.PAIRED -> TerminalCyan
-                    AdbConnectionStatus.PAIRING, AdbConnectionStatus.CONNECTING -> TerminalYellow
-                    AdbConnectionStatus.ERROR -> TerminalRed
-                    AdbConnectionStatus.DISCONNECTED -> TextMuted
+            Column(modifier = Modifier.padding(14.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = if (isConnected) Icons.Default.CheckCircle else if (isRunningWaitingAuth) Icons.Default.VpnKey else Icons.Default.Link,
+                        contentDescription = null,
+                        tint = if (isConnected) TerminalGreen else if (isRunningWaitingAuth) TerminalYellow else TextMuted,
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = if (isConnected) "متصل عبر خدمة Shizuku بنجاح!" else if (isRunningWaitingAuth) "خدمة Shizuku تعمل بانتظار الإذن!" else "حالة الخدمة: غير متصل بعد",
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimaryDark,
+                            fontSize = 14.sp
+                        )
+                        Text(
+                            text = pairingState.statusMessage,
+                            color = if (isConnected) TerminalGreen else TextSecondaryDark,
+                            fontSize = 12.sp
+                        )
+                    }
                 }
 
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = iconColor,
-                    modifier = Modifier.size(24.dp)
-                )
-                Spacer(modifier = Modifier.width(10.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = pairingState.statusMessage,
-                        color = TextPrimaryDark,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Text(
-                        text = "IP الهاتف الحالي: ${pairingState.hostIp}",
-                        color = TerminalCyan,
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
-                }
-
-                if (pairingState.status == AdbConnectionStatus.CONNECTED) {
-                    Button(
-                        onClick = onNavigateToTerminal,
-                        colors = ButtonDefaults.buttonColors(containerColor = TerminalGreen),
-                        shape = RoundedCornerShape(8.dp)
+                if (isConnected) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "فتح الترمينال",
-                            color = TerminalBlack,
+                            text = "UID: ${if (pairingState.shizukuUid >= 0) pairingState.shizukuUid else 2000} (Shell Mode Active)",
+                            color = TerminalGreen,
                             fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
+                            fontFamily = FontFamily.Monospace
                         )
+
+                        Button(
+                            onClick = onNavigateToTerminal,
+                            colors = ButtonDefaults.buttonColors(containerColor = TerminalGreen),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Icon(imageVector = Icons.Default.Terminal, contentDescription = null, tint = TerminalBlack, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("فتح الترمينال الآن", color = TerminalBlack, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                    }
+                } else if (isRunningWaitingAuth) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Button(
+                        onClick = { viewModel.requestShizukuPermission() },
+                        colors = ButtonDefaults.buttonColors(containerColor = TerminalYellow),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(imageVector = Icons.Default.Security, contentDescription = null, tint = TerminalBlack, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("منح الصلاحية لتطبيق ADB AI Terminal", color = TerminalBlack, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
                 }
             }
         }
 
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Critical Oppo ColorOS 13 Notice
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .border(1.dp, TerminalRed.copy(alpha = 0.6f), RoundedCornerShape(12.dp)),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF241113))
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = TerminalRed,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "شرط أساسي لهواتف OPPO (ColorOS 13):",
+                        fontWeight = FontWeight.Bold,
+                        color = TerminalRed,
+                        fontSize = 13.sp
+                    )
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "في نظام ColorOS 13 على Reno 5، يمنع النظام الاتصال بأوامر ADB ما لم تقم بتفعيل خيار:\n👉 'تعطيل مراقبة الأذونات' (Disable permission monitoring)\nالموجود في أسفل قائمة خيارات المطور.",
+                    fontSize = 12.sp,
+                    color = TextPrimaryDark,
+                    lineHeight = 18.sp
+                )
+            }
+        }
+
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Step 1: Open Developer Settings in ColorOS 13
+        // Easy 3-Step Setup Guide
+        Text(
+            text = "خطوات الاقتران الصحيحة بنمط Shizuku:",
+            fontWeight = FontWeight.Bold,
+            color = TextPrimaryDark,
+            fontSize = 14.sp
+        )
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Step 1 Card
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -213,65 +287,96 @@ fun WirelessPairingScreen(
                 .border(1.dp, TerminalCardBorder, RoundedCornerShape(12.dp)),
             colors = CardDefaults.cardColors(containerColor = TerminalCardSurface)
         ) {
-            Column(modifier = Modifier.padding(14.dp)) {
+            Column(modifier = Modifier.padding(12.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "الخطوة 1: تفعيل تصحيح الأخطاء اللاسلكي",
+                        text = "1. فتح تصحيح الأخطاء اللاسلكي",
                         fontWeight = FontWeight.Bold,
                         color = TerminalCyan,
                         fontSize = 13.sp
                     )
 
                     Button(
-                        onClick = {
-                            try {
-                                val intent = Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
-                                context.startActivity(intent)
-                            } catch (_: Exception) {
-                                try {
-                                    val intent = Intent(Settings.ACTION_SETTINGS)
-                                    context.startActivity(intent)
-                                } catch (_: Exception) {
-                                    Toast.makeText(context, "يرجى فتح إعدادات الهاتف يدوياً", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B2A38)),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, TerminalCyan.copy(alpha = 0.5f)),
+                        onClick = { viewModel.openWirelessDebuggingSettings() },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF162536)),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, TerminalCyan),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.Launch, contentDescription = null, tint = TerminalCyan, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("فتح الإعدادات فوراً", color = TerminalCyan, fontSize = 11.sp)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "قم بتفعيل: تصحيح أخطاء USB + تصحيح الأخطاء اللاسلكي + تعطيل مراقبة الأذونات.",
+                    fontSize = 11.sp,
+                    color = TextSecondaryDark
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Step 2 Card
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .border(1.dp, TerminalCardBorder, RoundedCornerShape(12.dp)),
+            colors = CardDefaults.cardColors(containerColor = TerminalCardSurface)
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "2. تشغيل خدمة Shizuku",
+                        fontWeight = FontWeight.Bold,
+                        color = TerminalYellow,
+                        fontSize = 13.sp
+                    )
+
+                    Button(
+                        onClick = { viewModel.launchShizukuApp() },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2312)),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, TerminalYellow),
                         shape = RoundedCornerShape(8.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Launch,
+                            imageVector = if (pairingState.isShizukuInstalled) Icons.Default.Launch else Icons.Default.Download,
                             contentDescription = null,
-                            tint = TerminalCyan,
-                            modifier = Modifier.size(16.dp)
+                            tint = TerminalYellow,
+                            modifier = Modifier.size(14.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "فتح خيارات المطور",
-                            color = TerminalCyan,
+                            text = if (pairingState.isShizukuInstalled) "فتح تطبيق Shizuku" else "تحميل Shizuku APK",
+                            color = TerminalYellow,
                             fontSize = 11.sp
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "في هاتف Oppo Reno 5 (ColorOS 13):\n1. الإعدادات > إعدادات إضافية / النظام > خيارات المطور\n2. قم بتفعيل 'تصحيح الأخطاء اللاسلكي' (Wireless Debugging)\n3. اضغط على 'إقران الجهاز باستخدام رمز إقران' (Pair device with pairing code).",
-                    fontSize = 12.sp,
-                    color = TextSecondaryDark,
-                    lineHeight = 18.sp
+                    text = "في تطبيق Shizuku: اضغط اقتران (Pairing) وأدخل الرمز المكون من 6 أرقام، ثم اضغط 'بدء' (Start) لتشغيل الخدمة.",
+                    fontSize = 11.sp,
+                    color = TextSecondaryDark
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
-        // Step 2: Pairing Inputs (Port + 6-digit Code)
+        // Step 3 Card
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -279,229 +384,39 @@ fun WirelessPairingScreen(
                 .border(1.dp, TerminalCardBorder, RoundedCornerShape(12.dp)),
             colors = CardDefaults.cardColors(containerColor = TerminalCardSurface)
         ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.VpnKey,
-                        contentDescription = null,
-                        tint = TerminalYellow,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "الخطوة 2: إدخال رمز ومنفذ الاقتران",
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimaryDark,
-                        fontSize = 13.sp
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
+            Column(modifier = Modifier.padding(12.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Pairing Port
-                    OutlinedTextField(
-                        value = pairingPortInput,
-                        onValueChange = { pairingPortInput = it },
-                        modifier = Modifier.weight(1f),
-                        label = { Text("منفذ الاقتران (Port)", fontSize = 11.sp) },
-                        placeholder = { Text("مثال: 38291", fontSize = 11.sp, color = TextMuted) },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        textStyle = TextStyle(color = TextPrimaryDark, fontFamily = FontFamily.Monospace),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = TerminalDarkSurface,
-                            unfocusedContainerColor = TerminalDarkSurface,
-                            focusedBorderColor = TerminalYellow,
-                            unfocusedBorderColor = TerminalCardBorder
-                        )
-                    )
-
-                    // 6-digit Code
-                    OutlinedTextField(
-                        value = pairingCodeInput,
-                        onValueChange = { if (it.length <= 6) pairingCodeInput = it },
-                        modifier = Modifier.weight(1f),
-                        label = { Text("رمز الاقتران (6 أرقام)", fontSize = 11.sp) },
-                        placeholder = { Text("مثال: 849201", fontSize = 11.sp, color = TextMuted) },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        textStyle = TextStyle(color = TerminalYellow, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = TerminalDarkSurface,
-                            unfocusedContainerColor = TerminalDarkSurface,
-                            focusedBorderColor = TerminalYellow,
-                            unfocusedBorderColor = TerminalCardBorder
-                        )
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Button(
-                    onClick = {
-                        viewModel.pairDevice(pairingPortInput, pairingCodeInput)
-                    },
-                    enabled = !isConnectingOrPairing && pairingPortInput.isNotBlank() && pairingCodeInput.length == 6,
-                    colors = ButtonDefaults.buttonColors(containerColor = TerminalYellow),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    if (pairingState.status == AdbConnectionStatus.PAIRING) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            color = TerminalBlack,
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        Text(
-                            text = "بدء الاقتران بنمط Shizuku (Pair Device)",
-                            color = TerminalBlack,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp
-                        )
-                    }
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(14.dp))
-
-        // Step 3: Main Connection Port
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .border(1.dp, TerminalCardBorder, RoundedCornerShape(12.dp)),
-            colors = CardDefaults.cardColors(containerColor = TerminalCardSurface)
-        ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Cable,
-                        contentDescription = null,
-                        tint = TerminalGreen,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "الخطوة 3: الاتصال وتفعيل جلسة ADB",
+                        text = "3. تفويض الصلاحية لـ ADB AI Terminal",
                         fontWeight = FontWeight.Bold,
-                        color = TextPrimaryDark,
+                        color = TerminalGreen,
                         fontSize = 13.sp
                     )
-                }
 
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = "بعد نجاح الاقتران، ارجع إلى شاشة 'تصحيح الأخطاء اللاسلكي' الرئيسية وانظر إلى المنفذ المكتوب تحت عنوان IP (مثال: 192.168.1.15:43821) وأدخل آخر 5 أرقام هنا:",
-                    fontSize = 11.sp,
-                    color = TextSecondaryDark,
-                    lineHeight = 16.sp
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                OutlinedTextField(
-                    value = connectPortInput,
-                    onValueChange = { connectPortInput = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("منفذ الاتصال الرئيسي (Connect Port)", fontSize = 11.sp) },
-                    placeholder = { Text("مثال: 43821", fontSize = 11.sp, color = TextMuted) },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    textStyle = TextStyle(color = TerminalGreen, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = TerminalDarkSurface,
-                        unfocusedContainerColor = TerminalDarkSurface,
-                        focusedBorderColor = TerminalGreen,
-                        unfocusedBorderColor = TerminalCardBorder
-                    )
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Button(
-                    onClick = {
-                        viewModel.connectDevice(connectPortInput)
-                    },
-                    enabled = !isConnectingOrPairing && connectPortInput.isNotBlank(),
-                    colors = ButtonDefaults.buttonColors(containerColor = TerminalGreen),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    if (pairingState.status == AdbConnectionStatus.CONNECTING) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            color = TerminalBlack,
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        Text(
-                            text = "تفعيل جلسة ADB اللاسلكية والاتصال",
-                            color = TerminalBlack,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp
-                        )
+                    Button(
+                        onClick = {
+                            viewModel.requestShizukuPermission()
+                            viewModel.refreshShizukuStatus()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = TerminalGreen),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.Security, contentDescription = null, tint = TerminalBlack, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("ربط الـ Binder الآن", color = TerminalBlack, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                     }
                 }
-            }
-        }
 
-        Spacer(modifier = Modifier.height(14.dp))
-
-        // Direct Shizuku Integration
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .border(1.dp, Color(0xFF384357), RoundedCornerShape(12.dp)),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF141A24))
-        ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Security,
-                        contentDescription = null,
-                        tint = TerminalCyan,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "الربط المباشر مع تطبيق Shizuku (اختياري)",
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimaryDark,
-                        fontSize = 13.sp
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "إذا قمت بتشغيل Shizuku مسبقاً على هاتفك، يمكنك الضغط هنا للربط المباشر معه وتفعيل كافة الصلاحيات بدون إعادة الاقتران.",
+                    text = "بمجرد تشغيل Shizuku، اضغط الزر أعلاه للمصادقة واستلام كامل صلاحيات المطورين (UID 2000).",
                     fontSize = 11.sp,
-                    color = TextSecondaryDark,
-                    lineHeight = 16.sp
+                    color = TextSecondaryDark
                 )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Button(
-                    onClick = { viewModel.connectShizuku() },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1F3547)),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, TerminalCyan),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "الربط عبر خدمة Shizuku Binder IPC",
-                        color = TerminalCyan,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
-                    )
-                }
             }
         }
 
