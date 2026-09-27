@@ -88,20 +88,18 @@ class AdbViewModel(application: Application) : AndroidViewModel(application) {
         adbManager.clearTerminal()
     }
 
-    fun requestShizukuPermission() {
-        adbManager.requestShizukuPermission()
+    fun connectWirelessAdb(port: String) {
+        viewModelScope.launch {
+            adbManager.connectWirelessAdb(port)
+        }
     }
 
-    fun launchShizukuApp() {
-        adbManager.launchShizukuApp()
+    fun disconnectAdb() {
+        adbManager.disconnectAdb()
     }
 
     fun openWirelessDebuggingSettings() {
         adbManager.openWirelessDebuggingSettings()
-    }
-
-    fun refreshShizukuStatus() {
-        adbManager.updateShizukuStatus()
     }
 
     fun askAi(prompt: String) {

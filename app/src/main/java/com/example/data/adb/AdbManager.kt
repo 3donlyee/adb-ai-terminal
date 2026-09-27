@@ -9,30 +9,27 @@ import android.os.Build
 import android.os.SystemClock
 import android.provider.Settings
 import android.service.quicksettings.TileService
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
-import rikka.shizuku.Shizuku
 import java.io.BufferedReader
+import java.io.ByteArrayOutputStream
 import java.io.InputStreamReader
 import java.net.NetworkInterface
 import java.util.Collections
 
 enum class AdbConnectionStatus {
     DISCONNECTED,
-    PAIRING,
-    PAIRED,
     CONNECTING,
     CONNECTED,
     ERROR
 }
 
 enum class AdbBackend {
-    SHIZUKU_IPC,
-    WIRELESS_ADB,
+    NATIVE_WIRELESS_ADB,
     LOCAL_PROCESS
 }
 
@@ -58,35 +55,34 @@ data class AdbResult(
 
 data class PairingState(
     val hostIp: String = "127.0.0.1",
-    val pairingPort: String = "",
-    val pairingCode: String = "",
     val connectPort: String = "",
+    val pairingCode: String = "",
+    val pairingPort: String = "",
     val status: AdbConnectionStatus = AdbConnectionStatus.DISCONNECTED,
     val activeBackend: AdbBackend = AdbBackend.LOCAL_PROCESS,
-    val statusMessage: String = "جاهز للربط",
-    val isShizukuInstalled: Boolean = false,
-    val isShizukuRunning: Boolean = false,
-    val isShizukuPermissionGranted: Boolean = false,
-    val shizukuUid: Int = -1,
-    val shizukuVersion: Int = -1
+    val statusMessage: String = "جاهز للاتصال بمحرك ADB الداخلي"
 )
 
 class AdbManager(private val context: Context) {
 
     companion object {
-        const val SHIZUKU_REQUEST_CODE = 8001
-        const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
+        private const val TAG = "AdbManager"
     }
 
     private val prefs: SharedPreferences =
         context.getSharedPreferences("adb_ai_prefs", Context.MODE_PRIVATE)
 
+    private val adbKey: AdbKey by lazy {
+        AdbKey(PreferenceAdbKeyStore(prefs), "adb_ai_terminal")
+    }
+
+    private var activeAdbClient: AdbClient? = null
+
     private val _pairingState = MutableStateFlow(
         PairingState(
             hostIp = getLocalWifiIp(),
-            pairingPort = prefs.getString("last_pairing_port", "") ?: "",
             connectPort = prefs.getString("last_connect_port", "") ?: "",
-            isShizukuInstalled = checkShizukuInstalled()
+            pairingPort = prefs.getString("last_pairing_port", "") ?: ""
         )
     )
     val pairingState: StateFlow<PairingState> = _pairingState.asStateFlow()
@@ -97,147 +93,92 @@ class AdbManager(private val context: Context) {
     private val _terminalLogs = MutableStateFlow<List<String>>(
         listOf(
             "==================================================",
-            "   ADB AI TERMINAL v3.0 - SHIZUKU PROTOCOL READY",
+            "   ADB AI TERMINAL v3.5 - INDEPENDENT ADB ENGINE",
+            "   Architecture: Native Kotlin ADB Protocol (TLS 1.3)",
             "   Target: Oppo Reno 5 4G [CPH2159 / Android 13 ColorOS]",
-            "   Integration: Native Shizuku IPC Binder & Wireless ADB",
+            "   Status: Direct on-device Wireless ADB (No Shizuku needed)",
             "==================================================",
             "reno5@coloros13:~$ help"
         )
     )
     val terminalLogs: StateFlow<List<String>> = _terminalLogs.asStateFlow()
 
-    // Shizuku Listeners
-    private val permissionListener = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
-        if (requestCode == SHIZUKU_REQUEST_CODE) {
-            val granted = grantResult == PackageManager.PERMISSION_GRANTED
-            updateShizukuStatus()
-            if (granted) {
-                appendLog("[SHIZUKU] تم منح الصلاحية بنجاح! UID: ${runCatching { Shizuku.getUid() }.getOrDefault(2000)}")
-            } else {
-                appendLog("[SHIZUKU] تم رفض الصلاحية من قبل المستخدم")
-            }
-        }
-    }
-
-    private val binderReceivedListener = Shizuku.OnBinderReceivedListener {
-        updateShizukuStatus()
-        appendLog("[SHIZUKU] تم استقبال اتصال Binder بنجاح (Service Active)")
-    }
-
-    private val binderDeadListener = Shizuku.OnBinderDeadListener {
-        updateShizukuStatus()
-        appendLog("[SHIZUKU] انقطع اتصال Shizuku Binder")
-    }
-
-    init {
-        try {
-            Shizuku.addRequestPermissionResultListener(permissionListener)
-            Shizuku.addBinderReceivedListenerSticky(binderReceivedListener)
-            Shizuku.addBinderDeadListener(binderDeadListener)
-        } catch (_: Exception) {}
-        updateShizukuStatus()
-    }
-
-    fun updateShizukuStatus() {
-        val installed = checkShizukuInstalled()
-        val isRunning = try {
-            Shizuku.pingBinder()
-        } catch (_: Exception) {
-            false
-        }
-
-        val hasPermission = if (isRunning) {
-            try {
-                if (Shizuku.isPreV11()) {
-                    false
-                } else {
-                    Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
-                }
-            } catch (_: Exception) {
-                false
-            }
+    fun appendLog(line: String) {
+        val current = _terminalLogs.value.toMutableList()
+        current.add(line)
+        if (current.size > 1500) {
+            _terminalLogs.value = current.takeLast(1000)
         } else {
-            false
+            _terminalLogs.value = current
         }
+    }
 
-        val uid = if (isRunning && hasPermission) {
-            try { Shizuku.getUid() } catch (_: Exception) { -1 }
-        } else {
-            -1
-        }
-
-        val version = if (isRunning) {
-            try { Shizuku.getVersion() } catch (_: Exception) { -1 }
-        } else {
-            -1
-        }
-
-        val newStatus = when {
-            isRunning && hasPermission -> AdbConnectionStatus.CONNECTED
-            isRunning && !hasPermission -> AdbConnectionStatus.PAIRED
-            else -> if (_pairingState.value.status == AdbConnectionStatus.CONNECTED && _pairingState.value.activeBackend == AdbBackend.WIRELESS_ADB) {
-                AdbConnectionStatus.CONNECTED
-            } else {
-                AdbConnectionStatus.DISCONNECTED
-            }
-        }
-
-        val statusMsg = when {
-            isRunning && hasPermission -> "متصل بنجاح عبر Shizuku (UID: $uid - Shell Mode)"
-            isRunning && !hasPermission -> "خدمة Shizuku تعمل! اضغط لطلب الإذن والمصادقة"
-            installed -> "تطبيق Shizuku مثبت، يرجى تشغيل الخدمة أو الاقتران"
-            else -> "جاهز للاقتران أو الاتصال بـ ADB"
-        }
-
-        _pairingState.value = _pairingState.value.copy(
-            isShizukuInstalled = installed,
-            isShizukuRunning = isRunning,
-            isShizukuPermissionGranted = hasPermission,
-            shizukuUid = uid,
-            shizukuVersion = version,
-            status = newStatus,
-            activeBackend = if (isRunning && hasPermission) AdbBackend.SHIZUKU_IPC else _pairingState.value.activeBackend,
-            statusMessage = statusMsg
+    fun clearTerminal() {
+        _terminalLogs.value = listOf(
+            "reno5@coloros13:~$ terminal cleared"
         )
     }
 
-    fun requestShizukuPermission() {
-        if (!Shizuku.pingBinder()) {
-            appendLog("[SHIZUKU] الخدمة غير نشطة حالياً. يرجى فتح تطبيق Shizuku وتشغيلها أولاً.")
-            return
+    suspend fun connectWirelessAdb(portStr: String) = withContext(Dispatchers.IO) {
+        val port = portStr.trim().toIntOrNull()
+        if (port == null || port !in 1..65535) {
+            _pairingState.value = _pairingState.value.copy(
+                status = AdbConnectionStatus.ERROR,
+                statusMessage = "رقم المنفذ غير صالح (يجب أن يكون بين 1 و 65535)"
+            )
+            appendLog("[ERROR] رقم المنفذ غير صحيح: $portStr")
+            return@withContext
         }
 
+        prefs.edit().putString("last_connect_port", portStr.trim()).apply()
+
+        _pairingState.value = _pairingState.value.copy(
+            connectPort = portStr.trim(),
+            status = AdbConnectionStatus.CONNECTING,
+            statusMessage = "جارٍ الاتصال بمنفذ ADB: $port عبر 127.0.0.1..."
+        )
+        appendLog("[ADB] محاولة الاتصال بـ 127.0.0.1:$port باستخدام بروتوكول ADB TLS...")
+
         try {
-            if (Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) {
-                updateShizukuStatus()
-                appendLog("[SHIZUKU] الصلاحيات ممنوحة بالفعل!")
-            } else {
-                Shizuku.requestPermission(SHIZUKU_REQUEST_CODE)
-                appendLog("[SHIZUKU] تم إرسال طلب الصلاحية...")
-            }
+            activeAdbClient?.close()
+            val client = AdbClient("127.0.0.1", port, adbKey)
+            client.connect()
+            activeAdbClient = client
+
+            _pairingState.value = _pairingState.value.copy(
+                status = AdbConnectionStatus.CONNECTED,
+                activeBackend = AdbBackend.NATIVE_WIRELESS_ADB,
+                statusMessage = "متصل بنجاح بمحرك ADB (Shell UID 2000 Active)"
+            )
+            appendLog("[ADB SUCCESS] تم الاتصال والمصادقة مع سيرفر ADB الداخلي للجهاز بنجاح!")
+            appendLog("[ADB INFO] جميع أوامر الترمينال الآن تعمل بكامل صلاحيات Shell!")
         } catch (e: Exception) {
-            appendLog("[ERROR] فشل طلب صلاحيات Shizuku: ${e.message}")
+            Log.e(TAG, "Connection failed", e)
+            _pairingState.value = _pairingState.value.copy(
+                status = AdbConnectionStatus.ERROR,
+                statusMessage = "فشل الاتصال: ${e.localizedMessage ?: e.message}"
+            )
+            appendLog("[ADB ERROR] فشل الاتصال: ${e.message}")
+            appendLog("[TIP] تأكد من تفعيل تصحيح الأخطاء اللاسلكي وتعطيل مراقبة الأذونات في ColorOS.")
         }
     }
 
-    fun launchShizukuApp() {
-        val launchIntent = context.packageManager.getLaunchIntentForPackage(SHIZUKU_PACKAGE)
-        if (launchIntent != null) {
-            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(launchIntent)
-        } else {
-            // Open GitHub release or Play Store
-            try {
-                val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/thedjchi/Shizuku/releases/latest"))
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                context.startActivity(intent)
-            } catch (_: Exception) {}
-        }
+    fun disconnectAdb() {
+        try {
+            activeAdbClient?.close()
+            activeAdbClient = null
+        } catch (_: Exception) {}
+
+        _pairingState.value = _pairingState.value.copy(
+            status = AdbConnectionStatus.DISCONNECTED,
+            activeBackend = AdbBackend.LOCAL_PROCESS,
+            statusMessage = "تم قطع الاتصال"
+        )
+        appendLog("[ADB] تم إغلاق جلسة ADB.")
     }
 
     fun openWirelessDebuggingSettings() {
         try {
-            // Shizuku's exact tile intent
             val intent = Intent(TileService.ACTION_QS_TILE_PREFERENCES).apply {
                 setPackage("com.android.settings")
                 putExtra(
@@ -262,31 +203,6 @@ class AdbManager(private val context: Context) {
                     context.startActivity(intent)
                 } catch (_: Exception) {}
             }
-        }
-    }
-
-    fun appendLog(line: String) {
-        val current = _terminalLogs.value.toMutableList()
-        current.add(line)
-        if (current.size > 1500) {
-            _terminalLogs.value = current.takeLast(1000)
-        } else {
-            _terminalLogs.value = current
-        }
-    }
-
-    fun clearTerminal() {
-        _terminalLogs.value = listOf(
-            "reno5@coloros13:~$ terminal cleared"
-        )
-    }
-
-    private fun checkShizukuInstalled(): Boolean {
-        return try {
-            context.packageManager.getPackageInfo(SHIZUKU_PACKAGE, 0)
-            true
-        } catch (e: Exception) {
-            false
         }
     }
 
@@ -339,20 +255,6 @@ class AdbManager(private val context: Context) {
         )
     }
 
-    private fun createShizukuProcess(cmd: Array<String>): Process {
-        val method = Shizuku::class.java.getDeclaredMethod(
-            "newProcess",
-            Array<String>::class.java,
-            Array<String>::class.java,
-            String::class.java
-        )
-        method.isAccessible = true
-        return method.invoke(null, cmd, null, null) as Process
-    }
-
-    /**
-     * Executes command using Shizuku Binder Process (UID 2000 Shell) or standard ProcessBuilder
-     */
     suspend fun executeCommand(commandStr: String): AdbResult = withContext(Dispatchers.IO) {
         val trimmed = commandStr.trim()
         if (trimmed.isEmpty()) {
@@ -370,48 +272,49 @@ class AdbManager(private val context: Context) {
         var outputText = ""
         var exitCode = 0
 
-        val isShizukuAvailable = try {
-            Shizuku.pingBinder() && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
-        } catch (_: Exception) {
-            false
-        }
-
-        try {
-            val process: Process = if (isShizukuAvailable) {
-                // Execute with real ADB UID 2000 privileges
-                createShizukuProcess(arrayOf("sh", "-c", trimmed))
-            } else {
-                ProcessBuilder("sh", "-c", trimmed)
+        val client = activeAdbClient
+        if (client != null && _pairingState.value.status == AdbConnectionStatus.CONNECTED) {
+            // Execute directly through on-device ADB socket!
+            try {
+                val outputStream = ByteArrayOutputStream()
+                client.command("shell:$trimmed") { bytes ->
+                    outputStream.write(bytes)
+                }
+                outputText = outputStream.toString("UTF-8").trimEnd()
+                exitCode = 0
+            } catch (e: Exception) {
+                Log.e(TAG, "ADB command failed, falling back to local process", e)
+                exitCode = 1
+                outputText = "خطأ في اتصال ADB: ${e.message}"
+            }
+        } else {
+            // Fallback to local process
+            try {
+                val process = ProcessBuilder("sh", "-c", trimmed)
                     .redirectErrorStream(true)
                     .start()
-            }
 
-            val reader = BufferedReader(InputStreamReader(process.inputStream))
-            val errReader = BufferedReader(InputStreamReader(process.errorStream))
-            val builder = StringBuilder()
-            var line: String?
-
-            while (reader.readLine().also { line = it } != null) {
-                builder.append(line).append("\n")
-            }
-            while (errReader.readLine().also { line = it } != null) {
-                builder.append(line).append("\n")
-            }
-
-            exitCode = process.waitFor()
-            outputText = builder.toString().trimEnd()
-
-            if (outputText.isBlank()) {
-                outputText = if (exitCode == 0) {
-                    val authMode = if (isShizukuAvailable) "Shizuku Shell UID 2000" else "Local Process"
-                    "[نجح التنفيذ بكود 0 ($authMode)]"
-                } else {
-                    "[فشل الأمر بكود $exitCode]"
+                val reader = BufferedReader(InputStreamReader(process.inputStream))
+                val builder = StringBuilder()
+                var line: String?
+                while (reader.readLine().also { line = it } != null) {
+                    builder.append(line).append("\n")
                 }
+                exitCode = process.waitFor()
+                outputText = builder.toString().trimEnd()
+            } catch (e: Exception) {
+                exitCode = 1
+                outputText = "خطأ في التنفيذ: ${e.message}"
             }
-        } catch (e: Exception) {
-            exitCode = 1
-            outputText = "خطأ في تنفيذ الأمر: ${e.localizedMessage ?: e.message}"
+        }
+
+        if (outputText.isBlank()) {
+            outputText = if (exitCode == 0) {
+                val mode = if (activeAdbClient != null) "ADB Protocol (UID 2000)" else "Local Process"
+                "[نجح الأمر بكود 0 ($mode)]"
+            } else {
+                "[انتهى الأمر بكود $exitCode]"
+            }
         }
 
         val elapsed = SystemClock.elapsedRealtime() - startTime
@@ -440,8 +343,7 @@ class AdbManager(private val context: Context) {
                 "com.heytap.habit.analysis",
                 "com.coloros.gamespace",
                 "com.oplus.cosa",
-                "com.coloros.weather.service",
-                "moe.shizuku.privileged.api"
+                "com.coloros.weather.service"
             )
         }
     }
